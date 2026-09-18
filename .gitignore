@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+.env
+.env.local
+ingestion/data
+ingestion/__pycache__
+ingestion/venv
+*.pyc
+.DS_Store
+*.tsbuildinfo
