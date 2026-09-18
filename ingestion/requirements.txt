@@ -2,6 +2,5 @@ requests
 pdfplumber
 psycopg2-binary
 python-dotenv
-anthropic
 beautifulsoup4
 lxml

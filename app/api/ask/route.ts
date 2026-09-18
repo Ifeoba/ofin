@@ -1,33 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import type Anthropic from "@anthropic-ai/sdk";
-import { ASK_MODEL, getAnthropic } from "@/lib/anthropic";
+import { groqToolCall } from "@/lib/groq";
 import { embed, embeddingsAvailable } from "@/lib/embeddings";
 import { getBillById, getChunksForQuestion } from "@/lib/queries";
 import { AskResponse } from "@/lib/types";
 
-const ASK_TOOL: Anthropic.Tool = {
-  name: "answer_bill_question",
-  description: "Answer a citizen's question about a bill using only the provided extracts.",
-  input_schema: {
-    type: "object",
-    properties: {
-      answer: { type: "string" },
-      citations: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            clause_ref: { type: "string" },
-            page: { type: "integer" },
-            quote: { type: "string" },
-          },
-          required: ["quote"],
+const ASK_TOOL_PARAMETERS = {
+  type: "object",
+  properties: {
+    answer: { type: "string" },
+    citations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          clause_ref: { type: "string" },
+          page: { type: "integer" },
+          quote: { type: "string" },
         },
+        required: ["quote"],
       },
-      grounded: { type: "boolean" },
     },
-    required: ["answer", "citations", "grounded"],
+    grounded: { type: "boolean" },
   },
+  required: ["answer", "citations", "grounded"],
 };
 
 const PROMPT = `Answer the user's question using ONLY the bill extracts below.
@@ -90,23 +85,19 @@ export async function POST(req: NextRequest) {
     .replace("{question}", question);
 
   try {
-    const client = getAnthropic();
-    const resp = await client.messages.create({
-      model: ASK_MODEL,
-      max_tokens: 1024,
-      tools: [ASK_TOOL],
-      tool_choice: { type: "tool", name: "answer_bill_question" },
-      messages: [{ role: "user", content: prompt }],
+    const result = await groqToolCall({
+      prompt,
+      toolName: "answer_bill_question",
+      toolDescription: "Answer a citizen's question about a bill using only the provided extracts.",
+      parameters: ASK_TOOL_PARAMETERS,
+      maxTokens: 1024,
     });
 
-    const toolUse = resp.content.find(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-    );
-    if (!toolUse) {
+    if (!result) {
       return NextResponse.json(FALLBACK);
     }
 
-    return NextResponse.json(toolUse.input as AskResponse);
+    return NextResponse.json(result as AskResponse);
   } catch (err) {
     console.error("ask-a-bill failed", err);
     return NextResponse.json(FALLBACK, { status: 200 });

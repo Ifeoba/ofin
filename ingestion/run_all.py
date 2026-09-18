@@ -1,7 +1,7 @@
 """One-off ingestion pipeline (ofin-spec.md §4/§6).
 
 Run this on your laptop after applying db/schema.sql and setting
-DATABASE_URL / ANTHROPIC_API_KEY / VOYAGE_API_KEY. It never runs again during
+DATABASE_URL / GROQ_API_KEY / VOYAGE_API_KEY. It never runs again during
 the demo — nothing at demo time depends on nass.gov.ng being up.
 
 Usage: python run_all.py
@@ -27,7 +27,7 @@ def main():
     print("== Step 4: parse Order Papers -> bill_events ==")
     parse_order_papers.run()
 
-    print("== Step 5: summarise bills (Claude) ==")
+    print("== Step 5: summarise bills (Groq) ==")
     summarize.run()
 
     print("== Step 6: chunk + embed ==")

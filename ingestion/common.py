@@ -3,6 +3,7 @@
 This is a one-off offline pipeline (see ofin-spec.md §6). It runs on your
 laptop, writes to Postgres, and never runs again during the demo.
 """
+import json
 import os
 import re
 from pathlib import Path
@@ -31,6 +32,9 @@ BILL_NUMBER_RE = re.compile(r"\(?\s*(?P<chamber>HB|SB)\.?\s*(?P<num>\d+)\s*\)?",
 
 VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
 VOYAGE_MODEL = "voyage-2"  # 1024-dim, matches the `vector(1024)` columns
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 def normalize_bill_number(raw: str) -> Optional[str]:
@@ -77,3 +81,44 @@ def embed_text(text: str, input_type: str = "document") -> list:
 
 def to_pgvector(vec: list) -> str:
     return "[" + ",".join(f"{x:.8f}" for x in vec) + "]"
+
+
+def groq_tool_call(
+    prompt: str,
+    tool_name: str,
+    tool_description: str,
+    parameters: dict,
+    max_tokens: int = 1500,
+) -> dict:
+    """Ask Groq for a structured response via a forced tool call, instead of
+    "return only JSON" text parsing — the response is always well-formed and
+    matches `parameters` exactly, the same guarantee the Anthropic tool-use
+    calls this replaced were built for.
+    """
+    api_key = os.environ["GROQ_API_KEY"]
+    resp = requests.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": GROQ_MODEL,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": tool_description,
+                        "parameters": parameters,
+                    },
+                }
+            ],
+            "tool_choice": {"type": "function", "function": {"name": tool_name}},
+        },
+        timeout=120,
+    )
+    resp.raise_for_status()
+    tool_calls = resp.json()["choices"][0]["message"].get("tool_calls")
+    if not tool_calls:
+        raise RuntimeError("Groq did not return a tool call")
+    return json.loads(tool_calls[0]["function"]["arguments"])

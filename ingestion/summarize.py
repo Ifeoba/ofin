@@ -1,43 +1,34 @@
-"""Step 5 — pre-generate summaries (ofin-spec.md §7.1), one Claude call per
+"""Step 5 — pre-generate summaries (ofin-spec.md §7.1), one Groq call per
 bill, written once to the `bills` row.
 
 Uses a forced tool call instead of "return only JSON" text parsing so the
 response is always well-formed, matching the schema exactly.
 """
 import json
-import os
 
-from anthropic import Anthropic
+from common import get_db_connection, groq_tool_call
 
-from common import get_db_connection
-
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
-
-SUMMARIZE_TOOL = {
-    "name": "summarize_bill",
-    "description": "Structured plain-language summary of a Nigerian bill for citizens.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "why_introduced": {"type": "string"},
-            "what_changes": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "change": {"type": "string"},
-                        "clause_ref": {"type": "string"},
-                        "page": {"type": "integer"},
-                    },
-                    "required": ["change", "clause_ref"],
+SUMMARIZE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "why_introduced": {"type": "string"},
+        "what_changes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "change": {"type": "string"},
+                    "clause_ref": {"type": "string"},
+                    "page": {"type": "integer"},
                 },
+                "required": ["change", "clause_ref"],
             },
-            "who_affected": {"type": "array", "items": {"type": "string"}},
-            "topics": {"type": "array", "items": {"type": "string"}},
         },
-        "required": ["summary", "why_introduced", "what_changes", "who_affected", "topics"],
+        "who_affected": {"type": "array", "items": {"type": "string"}},
+        "topics": {"type": "array", "items": {"type": "string"}},
     },
+    "required": ["summary", "why_introduced", "what_changes", "who_affected", "topics"],
 }
 
 PROMPT = """You are explaining Nigerian legislation to an ordinary citizen with no legal training.
@@ -59,22 +50,16 @@ FULL TEXT:
 """
 
 
-def summarize_bill(client: Anthropic, title: str, text: str) -> dict:
-    resp = client.messages.create(
-        model=MODEL,
-        max_tokens=1500,
-        tools=[SUMMARIZE_TOOL],
-        tool_choice={"type": "tool", "name": "summarize_bill"},
-        messages=[{"role": "user", "content": PROMPT.format(title=title, text=text[:180_000])}],
+def summarize_bill(title: str, text: str) -> dict:
+    return groq_tool_call(
+        prompt=PROMPT.format(title=title, text=text[:180_000]),
+        tool_name="summarize_bill",
+        tool_description="Structured plain-language summary of a Nigerian bill for citizens.",
+        parameters=SUMMARIZE_PARAMETERS,
     )
-    for block in resp.content:
-        if block.type == "tool_use":
-            return block.input
-    raise RuntimeError("Model did not return a tool_use block")
 
 
 def run():
-    client = Anthropic()
     conn = get_db_connection()
     cur = conn.cursor()
 
@@ -86,7 +71,7 @@ def run():
 
     for i, (bill_id, title, full_text) in enumerate(rows, 1):
         try:
-            result = summarize_bill(client, title, full_text)
+            result = summarize_bill(title, full_text)
         except Exception as exc:
             print(f"[{i}/{len(rows)}] {bill_id} FAILED: {exc}")
             continue

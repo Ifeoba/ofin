@@ -50,9 +50,13 @@ Full build spec: [ofin-spec.md](./ofin-spec.md).
 ```
 Ingestion (Python, run once) ──▶ Postgres + pgvector ◀── Next.js app
                                                               │
-                                                        Claude API
+                                                          Groq API
                                                      (ask-a-bill, runtime)
 ```
+
+LLM calls (summarisation + ask-a-bill) run on Groq rather than Claude — both use forced
+tool calls, so the "no source, no claim" structured-output guarantee is unaffected. See
+`lib/groq.ts` / `ingestion/common.py`'s `groq_tool_call`.
 
 Ingestion is a one-off offline script — it runs on your laptop and never runs again during
 the demo. Nothing at demo time depends on nass.gov.ng being up.
@@ -72,7 +76,7 @@ to keep running).
    npm run db:seed:mock   # optional — a few placeholder rows so the UI isn't empty
    ```
 
-2. **API keys.** Set `ANTHROPIC_API_KEY` (ask-a-bill + summarisation) and, optionally,
+2. **API keys.** Set `GROQ_API_KEY` (ask-a-bill + summarisation) and, optionally,
    `VOYAGE_API_KEY` (semantic search + retrieval; without it, search falls back to a plain
    text match and ask-a-bill falls back to reading a bill's chunks in order).
 
@@ -92,7 +96,7 @@ to keep running).
    ```
 
    This pulls the bill-tracker index, identifies Order Papers, downloads and extracts ~200
-   bill PDFs, parses Order Papers into `bill_events`, summarises bills with Claude, and
+   bill PDFs, parses Order Papers into `bill_events`, summarises bills with Groq, and
    chunks + embeds full text. It's idempotent — re-running it updates rows in place rather
    than duplicating them. (Currently blocked on nass.gov.ng being down — see above. In the
    meantime, `./venv/bin/python stopgap_civic_ng.py` populates real bill metadata from
